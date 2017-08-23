@@ -1,0 +1,169 @@
+---
+title: "Course Project Machine Learning"
+author: "Lei"
+date: "23 August 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+In this project, a machine learning model was generated using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, in order to predict the class of movements of the test dataset. This dataset is freely available under the "Creative Commons license (CC BY-SA) license from the website here: http://groupware.les.inf.puc-rio.br/har (Weight Lifting Exercise Dataset). 
+
+
+## Loading datasets
+First, the data was downloaded from the course links, and loaded into the Rstudio workspace.
+
+```{r loadData}
+#change wd:
+setwd("~/Rstudio")
+#download the two files to wd:
+traindataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#download.file(url=traindataUrl, destfile="~/Rstudio/training.csv")
+
+testdataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#download.file(url=testdataUrl, destfile="test.csv")
+
+#load datasets:
+training <- read.csv(url(traindataUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testdataUrl), na.strings=c("NA","#DIV/0!",""))
+
+```
+
+For model building using machine learning, we first ignore the test dataset and make some exploratory analysis on the training dataset. Note that I out-commanded the summary function as the output is much too long for this report.
+
+```{r checkTrain}
+dim(training)
+#summary(training)
+#names(training)
+unique(training$classe)
+```
+
+From the output above, we see that there are six participants (User names as level) who provided these data. The last variable "Classe" seems to be the value to be predicted. It has five levels (A, B, C, D and E).
+
+
+For the sake of cross validation of the model that will be generated, we first partitioned the training dataset into two parts: inTrain, and the rest:
+
+```{r partition}
+library(caret) # this command load also the packages lattice and ggplot2.
+inTrain <- createDataPartition(training$classe, p=0.6, list = F)
+myTrain <- training[inTrain, ]
+myTest <- training[-inTrain, ]
+dim(myTrain)
+dim(myTest)
+
+```
+
+
+
+
+```{r get percent}
+percent <- paste(round(100*dim(myTrain)[[1]]/(dim(myTrain)[[1]] + dim(myTest)[[1]]), 2), "%", sep="")
+
+``` 
+
+As shown above, a short check of the dataset dimension shows that `r percent` of the data points were assigned to the current training set.
+
+## Cleaning data
+From the dataset summary above, it seems that a lot of variables contain only marginal, or unsignificant data. These variables need to be cleaned out before building the model. Note that all the cleaning steps need to be applied on myTrain, myTest and the ultimate testing datasets in the same way.
+
+#### Step 1: Remove variables with nearly zero variance (both mean and sd are zero)
+```{r removeZero}
+zeros <- nearZeroVar(myTrain)
+myTrain <- myTrain[, -zeros]
+myTest <- myTest[, -zeros]
+testing <- testing[, -zeros]
+```
+
+By this means, 30 variables were removed.
+
+#### Step 2: Remove variables that are NA in more than 95% of the cases:
+
+``` {r removeNA}
+mostlyNA <- sapply(myTrain, function(x) mean(is.na(x))) > 0.95
+myTrain <- myTrain[, mostlyNA==F]
+myTest <- myTest[, mostlyNA==F]
+testing <- testing[, mostlyNA==F]
+```
+
+
+#### Step 3: Remove the first columns
+Moreover, we remove the first five variables that contain meta data of the participants, while do not have predictive values. 
+
+```{r removeMeta}
+myTrain <- myTrain[, -(1:5)]
+myTest <- myTest[, -(1:5)]
+testing <- testing[, -(1:5)]
+
+```
+
+By now, only 59 variables remained these cleaning steps.
+
+## Model building 1 - Decision Tree
+The principle of Decision tree appears intuitive to me due to its step-by-step manor. Therefore I first try out the Decision tree machine learning approach:
+
+```{r decisionTree}
+library(rpart)
+
+Mod_1 <- rpart(classe ~ ., data=myTrain, method="class")
+#fancyRpartPlot(modFitA1)
+predict_1 <- predict(Mod_1, myTest, type = "class")
+tree <- confusionMatrix(predict_1, myTest$classe)
+tree
+#plot(Mod_1)
+```
+
+Now let's predict the myTest data using this tree model, while making some decision tree figure:
+
+```{r drawTree}
+#install.packages("rpart.plot")
+library(rpart.plot)
+#library(RColorBrewer)
+#library(rattle)
+
+rpart.plot(Mod_1)
+```
+
+In the following we check the result of the cross-validation on myTest:
+
+```{r crossVali_tree}
+plot(tree$table, col=tree$byClass, main="Confusion Matrix of the Decision Tree on myTest")
+
+```
+
+The prediction worked in part, as can be seen by the biggest diagonal rectangulars in the confusion matrix plot above. However, the sensitivity of the model is not that high.  
+
+## Model building 2 - Random Forest
+Before proceeding to the final prediction on the test dataset, let's try out the random forest model:
+
+```{r randomF}
+library(randomForest)
+Mod_2 <- randomForest(classe ~ ., data=myTrain)
+predict_2 <- predict(Mod_2, myTest, type = "class")
+forest <- confusionMatrix(predict_2, myTest$classe)
+forest
+plot(Mod_2)
+```
+
+This time, both the sensitivity and specificity are really high, even 100% when the cross validation dataset is concerned. Therefore, we will conduct our final prediction using the random forest model:
+
+```{r finalPredict}
+#dim(myTrain)
+#dim(myTest)
+#dim(testing)
+#names(myTest)
+#names(testing)
+
+predict_final <- predict(Mod_2, testing, type = "class")
+predict_final
+```
+
+## Conclusive notes
+Amazingly, all 20 cases have been predicted correctly according to my quiz results!
+This supports a high prediction power of machine learning approaches.
+
+Finally, I would like to acknowledge the following authors that provided the data:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
